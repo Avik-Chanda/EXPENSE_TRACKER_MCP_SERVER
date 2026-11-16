@@ -4,7 +4,8 @@ import os
 
 mcp = FastMCP("EXPENSE_TRACKER_MCP_SERVER")
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "expenses.db")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(BASE_DIR, "expenses.db")
 
 def init_connection():
     return sqlite3.connect(DB_PATH)
