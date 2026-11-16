@@ -1,11 +1,11 @@
 import sqlite3
+import tempfile
 from fastmcp import FastMCP
 import os
 
 mcp = FastMCP("EXPENSE_TRACKER_MCP_SERVER")
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, "expenses.db")
+DB_PATH = os.path.join(tempfile.gettempdir(), "expenses.db")
 
 def init_connection():
     return sqlite3.connect(DB_PATH)
@@ -68,6 +68,9 @@ def summarize_expenses(start_date ,end_date, category=None):
 
         cols = [d[0] for d in curr.description]
         return [dict(zip(cols,r)) for r in curr.fetchall()]
+
+if __name__ == "__main__":
+    mcp.run(transport="http", host="0.0.0.0", port=8080)
 
 
 
