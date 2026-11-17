@@ -1,18 +1,17 @@
-import sqlite3
 import tempfile
 from fastmcp import FastMCP
 import os
-
-mcp = FastMCP("EXPENSE_TRACKER_MCP_SERVER")
+import aiosqlite
+from contextlib import asynccontextmanager
 
 DB_PATH = os.path.join(tempfile.gettempdir(), "expenses.db")
 
 def init_connection():
-    return sqlite3.connect(DB_PATH)
+    return aiosqlite.connect(DB_PATH)
 
-def init_db():
-    with init_connection() as c:
-        c.execute("""
+async def init_db():
+    async with init_connection() as c:
+        await c.execute("""
             CREATE TABLE IF NOT EXISTS expenses(
               id INTEGER PRIMARY KEY AUTOINCREMENT,
               date TEXT NOT NULL,
@@ -22,39 +21,47 @@ def init_db():
               note TEXT DEFAULT ''
             )
         """)
+        await c.commit()
 
-init_db()
+@asynccontextmanager
+async def lifespan(server: FastMCP):
+    await init_db()
+    yield
+
+mcp = FastMCP("EXPENSE_TRACKER_MCP_SERVER", lifespan=lifespan)
 
 @mcp.tool
-def list_expenses(start_date, end_date):
+async def list_expenses(start_date, end_date):
     """ List all the expenses within date range """
 
-    with init_connection() as c:
+    async with init_connection() as c:
         query = " SELECT id, date, category, subcategory, amount, note FROM expenses WHERE date BETWEEN ? AND ?"
         params = [start_date, end_date]
 
-        curr = c.execute(query, params)
-        cols = [d[0] for d in curr.description]
-        return [dict(zip(cols,r)) for r in curr.fetchall()]
+        async with c.execute(query,params) as curr: 
+            cols = [d[0] for d in curr.description]
+            rows = await curr.fetchall()
+            return [dict(zip(cols,r)) for r in rows]
 
 @mcp.tool
-def add_expenses(date, amount, category, subcategory="", note=""):
+async def add_expenses(date, amount, category, subcategory="", note=""):
     """ Add expenses to the expenses db """
-    with init_connection() as c:
+    async with init_connection() as c:
         query = """ INSERT INTO expenses(date, category, subcategory, amount, note) VALUES (?,?,?,?,?)"""
         params = [date, category, subcategory, amount, note]
 
-        curr = c.execute(query,params)
+        curr = await c.execute(query,params)
+        await c.commit()
         return {
             "status": "ok",
             "id": curr.lastrowid
         }
 
 @mcp.tool
-def summarize_expenses(start_date ,end_date, category=None):
+async def summarize_expenses(start_date ,end_date, category=None):
     """ Summarize Expenses """
 
-    with init_connection() as c:
+    async with init_connection() as c:
         query = "select date, amount, category, subcategory, note from expenses where date between ? and ?"
         params = [start_date,end_date]
 
@@ -63,11 +70,10 @@ def summarize_expenses(start_date ,end_date, category=None):
             params.append(category)
 
         query += " group by category order by category asc"
-
-        curr = c.execute(query,params)
-
-        cols = [d[0] for d in curr.description]
-        return [dict(zip(cols,r)) for r in curr.fetchall()]
+        async with c.execute(query,params) as curr:
+            cols = [d[0] for d in curr.description]
+            rows = await curr.fetchall()
+            return [dict(zip(cols,r)) for r in rows]
 
 if __name__ == "__main__":
     mcp.run(transport="http", host="0.0.0.0", port=8080)
